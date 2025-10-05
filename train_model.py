@@ -12,17 +12,24 @@ from ml.model import (
     save_model,
     train_model,
 )
-# TODO: load the cencus.csv data
-project_path = "Your path here"
-data_path = os.path.join(project_path, "data", "census.csv")
-print(data_path)
-data = None # your code here
 
-# TODO: split the provided data to have a train dataset and a test dataset
-# Optional enhancement, use K-fold cross validation instead of a train-test split.
-train, test = None, None# Your code here
+# --- Paths -------------------------------------------------------------
+# Resolve project root from this file's location (works on Windows/macOS/Linux)
+PROJECT_PATH = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(PROJECT_PATH, "data", "census.csv")
+MODEL_DIR = os.path.join(PROJECT_PATH, "model")
+os.makedirs(MODEL_DIR, exist_ok=True)
 
-# DO NOT MODIFY
+print(f"Loading data from: {DATA_PATH}")
+data = pd.read_csv(DATA_PATH)
+
+# --- Split -------------------------------------------------------------
+# Keep label distribution similar in both splits
+train, test = train_test_split(
+    data, test_size=0.20, random_state=42, stratify=data["salary"]
+)
+
+# --- Categorical features (match CSV column names exactly) -------------
 cat_features = [
     "workclass",
     "education",
@@ -34,54 +41,69 @@ cat_features = [
     "native-country",
 ]
 
-# TODO: use the process_data function provided to process the data.
+# --- Process data ------------------------------------------------------
 X_train, y_train, encoder, lb = process_data(
-    # your code here
-    # use the train dataset 
-    # use training=True
-    # do not need to pass encoder and lb as input
-    )
+    train,
+    categorical_features=cat_features,
+    label="salary",
+    training=True,     # fit encoder & label binarizer
+)
 
 X_test, y_test, _, _ = process_data(
     test,
     categorical_features=cat_features,
     label="salary",
-    training=False,
+    training=False,    # use fitted encoder & lb
     encoder=encoder,
     lb=lb,
 )
 
-# TODO: use the train_model function to train the model on the training dataset
-model = None # your code here
+# --- Train -------------------------------------------------------------
+model = train_model(X_train, y_train)
 
-# save the model and the encoder
-model_path = os.path.join(project_path, "model", "model.pkl")
+# --- Save artifacts ----------------------------------------------------
+model_path = os.path.join(MODEL_DIR, "model.pkl")
+encoder_path = os.path.join(MODEL_DIR, "encoder.pkl")
+lb_path = os.path.join(MODEL_DIR, "lb.pkl")  # helpful later for API
+
 save_model(model, model_path)
-encoder_path = os.path.join(project_path, "model", "encoder.pkl")
 save_model(encoder, encoder_path)
+save_model(lb, lb_path)
 
-# load the model
-model = load_model(
-    model_path
-) 
+print(f"Model saved to:   {model_path}")
+print(f"Encoder saved to: {encoder_path}")
+print(f"LabelBinarizer saved to: {lb_path}")
 
-# TODO: use the inference function to run the model inferences on the test dataset.
-preds = None # your code here
+# --- Load model back (sanity check) -----------------------------------
+model = load_model(model_path)
 
-# Calculate and print the metrics
+# --- Inference & metrics ----------------------------------------------
+preds = inference(model, X_test)
+
 p, r, fb = compute_model_metrics(y_test, preds)
 print(f"Precision: {p:.4f} | Recall: {r:.4f} | F1: {fb:.4f}")
 
-# TODO: compute the performance on model slices using the performance_on_categorical_slice function
-# iterate through the categorical features
+# --- Slice performance -------------------------------------------------
+# Reset (overwrite) the slice output file once, then append inside loop
+slice_out_path = os.path.join(PROJECT_PATH, "slice_output.txt")
+open(slice_out_path, "w").close()
+
 for col in cat_features:
-    # iterate through the unique values in one categorical feature
-    for slicevalue in sorted(test[col].unique()):
-        count = test[test[col] == slicevalue].shape[0]
-        p, r, fb = performance_on_categorical_slice(
-            # your code here
-            # use test, col and slicevalue as part of the input
+    # iterate through unique values of this categorical column
+    for slice_value in sorted(test[col].dropna().unique()):
+        count = test[test[col] == slice_value].shape[0]
+        sp, sr, sfb = performance_on_categorical_slice(
+            data=test,
+            column_name=col,
+            slice_value=slice_value,
+            categorical_features=cat_features,
+            label="salary",
+            encoder=encoder,
+            lb=lb,
+            model=model,
         )
-        with open("slice_output.txt", "a") as f:
-            print(f"{col}: {slicevalue}, Count: {count:,}", file=f)
-            print(f"Precision: {p:.4f} | Recall: {r:.4f} | F1: {fb:.4f}", file=f)
+        with open(slice_out_path, "a", encoding="utf-8") as f:
+            print(f"{col}: {slice_value}, Count: {count:,}", file=f)
+            print(f"Precision: {sp:.4f} | Recall: {sr:.4f} | F1: {sfb:.4f}", file=f)
+
+print(f"Slice metrics written to: {slice_out_path}")
