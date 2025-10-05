@@ -1,0 +1,13 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\.github",
+    "\\.github\\workflows",
+    "\\data",
+    "\\ml",
+    "\\model",
+    "\\screenshots"
+  ],
+  "SelectedNode": "\\ml\\model.py",
+  "PreviewInSolutionExplorer": false
+}
